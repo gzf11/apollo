@@ -46,6 +46,7 @@ LineSegment2d::LineSegment2d(const Vec2d &start, const Vec2d &end)
   const double dx = end_.x() - start_.x();
   const double dy = end_.y() - start_.y();
   length_ = hypot(dx, dy);
+  //x cos ; y sin
   unit_direction_ =
       (length_ <= kMathEpsilon ? Vec2d(0, 0)
                                : Vec2d(dx / length_, dy / length_));
@@ -104,18 +105,24 @@ double LineSegment2d::DistanceSquareTo(const Vec2d &point) const {
   if (length_ <= kMathEpsilon) {
     return point.DistanceSquareTo(start_);
   }
+  //该点与起始点的x、y的差值
   const double x0 = point.x() - start_.x();
   const double y0 = point.y() - start_.y();
+  //差值朝x(cos_heading)、y(sin_heading)方向投影，判断投影点是否在该线段内，分类计算垂直距离
   const double proj = x0 * unit_direction_.x() + y0 * unit_direction_.y();
+  //投影点在起始点前，以点与起始点的距离作为最短距离
   if (proj <= 0.0) {
     return Square(x0) + Square(y0);
   }
+  //投影点在终止点后，以点与终止点的距离作为最短距离
   if (proj >= length_) {
     return point.DistanceSquareTo(end_);
   }
+
   return Square(x0 * unit_direction_.y() - y0 * unit_direction_.x());
 }
 
+//计算线段上一点到二维点的最短距离的平方，得到线段上最近的点。 
 double LineSegment2d::DistanceSquareTo(const Vec2d &point,
                                        Vec2d *const nearest_pt) const {
   CHECK_NOTNULL(nearest_pt);
@@ -123,6 +130,7 @@ double LineSegment2d::DistanceSquareTo(const Vec2d &point,
     *nearest_pt = start_;
     return point.DistanceSquareTo(start_);
   }
+  
   const double x0 = point.x() - start_.x();
   const double y0 = point.y() - start_.y();
   const double proj = x0 * unit_direction_.x() + y0 * unit_direction_.y();

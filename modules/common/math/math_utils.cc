@@ -51,6 +51,7 @@ double WrapAngle(const double angle) {
 }
 
 double NormalizeAngle(const double angle) {
+  //fmod() 用来对浮点数进行取模（求余）
   double a = std::fmod(angle + M_PI, 2.0 * M_PI);
   if (a < 0.0) {
     a += (2.0 * M_PI);

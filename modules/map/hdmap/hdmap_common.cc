@@ -39,6 +39,7 @@ constexpr double kDuplicatedPointsEpsilon = 1e-7;
 // Margin for comparation
 constexpr double kEpsilon = 0.1;
 
+//删除重复的点
 void RemoveDuplicates(std::vector<Vec2d> *points) {
   RETURN_IF_NULL(points);
 
@@ -52,6 +53,7 @@ void RemoveDuplicates(std::vector<Vec2d> *points) {
   points->resize(count);
 }
 
+//从Curve中取点
 void PointsFromCurve(const Curve &input_curve, std::vector<Vec2d> *points) {
   RETURN_IF_NULL(points);
   points->clear();
@@ -68,6 +70,7 @@ void PointsFromCurve(const Curve &input_curve, std::vector<Vec2d> *points) {
   RemoveDuplicates(points);
 }
 
+//将polygon转换为Polygon2d
 apollo::common::math::Polygon2d ConvertToPolygon2d(const Polygon &polygon) {
   std::vector<Vec2d> points;
   points.reserve(polygon.point_size());
@@ -77,11 +80,12 @@ apollo::common::math::Polygon2d ConvertToPolygon2d(const Polygon &polygon) {
   RemoveDuplicates(&points);
   while (points.size() >= 2 && points[0].DistanceTo(points.back()) <=
                                    apollo::common::math::kMathEpsilon) {
-    points.pop_back();
+    points.pop_back();//弹出尾部元素
   }
   return apollo::common::math::Polygon2d(points);
 }
 
+//获取curve中的segments
 void SegmentsFromCurve(
     const Curve &curve,
     std::vector<apollo::common::math::LineSegment2d> *segments) {
@@ -93,7 +97,7 @@ void SegmentsFromCurve(
     segments->emplace_back(points[i], points[i + 1]);
   }
 }
-
+//将Vec2d转换成PointENU
 PointENU PointFromVec2d(const Vec2d &point) {
   PointENU pt;
   pt.set_x(point.x());
@@ -102,9 +106,20 @@ PointENU PointFromVec2d(const Vec2d &point) {
 }
 
 }  // namespace
-
+//LaneInfo的实现
 LaneInfo::LaneInfo(const Lane &lane) : lane_(lane) { Init(); }
 
+//初始化
+//将lane的points取出来
+//并将LaneInfo的segments_、accumulated_s_、unit_directions_、heading_赋值
+//segments_：apollo::common::math::LineSegment2d，需要起始点和终止点
+//accumulated_s_：对应segments_的累加s
+//unit_directions_：对应segments_的方向
+//headings_：unit_directions_对应的角度
+//overlap_ids_：覆盖物id
+//sampled_left_width_、sampled_right_width_、sampled_left_road_width_、sampled_right_road_width_:左右车道边界距离，左右道路边界距离
+//lane_.type道路类型
+//创建KD树
 void LaneInfo::Init() {
   PointsFromCurve(lane_.central_curve(), &points_);
   CHECK_GE(points_.size(), 2U);
@@ -114,6 +129,7 @@ void LaneInfo::Init() {
   headings_.clear();
 
   double s = 0;
+  //
   for (size_t i = 0; i + 1 < points_.size(); ++i) {
     segments_.emplace_back(points_[i], points_[i + 1]);
     accumulated_s_.push_back(s);
@@ -180,7 +196,7 @@ void LaneInfo::Init() {
 
   CreateKDTree();
 }
-
+//通过s获取左右宽度
 void LaneInfo::GetWidth(const double s, double *left_width,
                         double *right_width) const {
   if (left_width != nullptr) {
@@ -191,8 +207,10 @@ void LaneInfo::GetWidth(const double s, double *left_width,
   }
 }
 
+//获取s航向角
 double LaneInfo::Heading(const double s) const {
   const double kEpsilon = 0.001;
+  //s小于lane中最小的s大于最大的s则返回0
   if (s + kEpsilon < accumulated_s_.front()) {
     AERROR << "s:" << s << " should be >= " << accumulated_s_.front();
     return 0.0;
@@ -201,22 +219,29 @@ double LaneInfo::Heading(const double s) const {
     AERROR << "s:" << s << " should be <= " << accumulated_s_.back();
     return 0.0;
   }
-
+  //std::lower_bound() 是返回大于等于 value 值的位置，
+  //而 std::upper_bound() 是返回第一个大于 value 值的位置
   auto iter = std::lower_bound(accumulated_s_.begin(), accumulated_s_.end(), s);
+  //返回两个迭代器之间的距离，也可以理解为计算两个元素 first 和 last 之间的元素数。
+  //获取索引
   int index = static_cast<int>(std::distance(accumulated_s_.begin(), iter));
+  //如果索引内容与s接近就用该值
   if (index == 0 || *iter - s <= common::math::kMathEpsilon) {
     return headings_[index];
   }
+  //如果不接近就用线性插值
   return common::math::slerp(headings_[index - 1], accumulated_s_[index - 1],
                              headings_[index], accumulated_s_[index], s);
 }
 
+//通过s获得曲率
 double LaneInfo::Curvature(const double s) const {
   if (points_.size() < 2U) {
     AERROR << "Not enough points to compute curvature.";
     return 0.0;
   }
   const double kEpsilon = 0.001;
+  //s过大或过小，返回0
   if (s + kEpsilon < accumulated_s_.front()) {
     AERROR << "s:" << s << " should be >= " << accumulated_s_.front();
     return 0.0;
@@ -225,7 +250,7 @@ double LaneInfo::Curvature(const double s) const {
     AERROR << "s:" << s << " should be <= " << accumulated_s_.back();
     return 0.0;
   }
-
+  //获得lane中最接近的s,accumulated_s_通过线段的长度累加而来
   auto iter = std::lower_bound(accumulated_s_.begin(), accumulated_s_.end(), s);
   if (iter == accumulated_s_.end()) {
     ADEBUG << "Reach the end of lane.";
@@ -236,24 +261,26 @@ double LaneInfo::Curvature(const double s) const {
     ADEBUG << "Reach the beginning of lane";
     return 0.0;
   }
+  //航向角变化/s变化量（近似为弧度）=曲率
   return (headings_[index] - headings_[index - 1]) /
          (accumulated_s_[index] - accumulated_s_[index - 1] + kEpsilon);
 }
 
+//通过s获取总宽度
 double LaneInfo::GetWidth(const double s) const {
   double left_width = 0.0;
   double right_width = 0.0;
   GetWidth(s, &left_width, &right_width);
   return left_width + right_width;
 }
-
+//获取有效宽度，以左右宽度的左右最小值*2
 double LaneInfo::GetEffectiveWidth(const double s) const {
   double left_width = 0.0;
   double right_width = 0.0;
   GetWidth(s, &left_width, &right_width);
   return 2 * std::min(left_width, right_width);
 }
-
+//获取road的左右宽度
 void LaneInfo::GetRoadWidth(const double s, double *left_width,
                             double *right_width) const {
   if (left_width != nullptr) {
@@ -263,7 +290,7 @@ void LaneInfo::GetRoadWidth(const double s, double *left_width,
     *right_width = GetWidthFromSample(sampled_right_road_width_, s);
   }
 }
-
+//获取road的总宽度
 double LaneInfo::GetRoadWidth(const double s) const {
   double left_width = 0.0;
   double right_width = 0.0;
@@ -271,6 +298,7 @@ double LaneInfo::GetRoadWidth(const double s) const {
   return left_width + right_width;
 }
 
+//从储存的samples插值求s的宽度
 double LaneInfo::GetWidthFromSample(
     const std::vector<LaneInfo::SampledWidth> &samples, const double s) const {
   if (samples.empty()) {
@@ -284,6 +312,7 @@ double LaneInfo::GetWidthFromSample(
   }
   int low = 0;
   int high = static_cast<int>(samples.size());
+  //二分法查找最近的s
   while (low + 1 < high) {
     const int mid = (low + high) / 2;
     if (samples[mid].first <= s) {
@@ -294,13 +323,16 @@ double LaneInfo::GetWidthFromSample(
   }
   const LaneInfo::SampledWidth &sample1 = samples[low];
   const LaneInfo::SampledWidth &sample2 = samples[high];
+  //插值
   const double ratio = (sample2.first - s) / (sample2.first - sample1.first);
   return sample1.second * ratio + sample2.second * (1.0 - ratio);
 }
 
+//判断点是否在lane上
 bool LaneInfo::IsOnLane(const Vec2d &point) const {
   double accumulate_s = 0.0;
   double lateral = 0.0;
+  //获取点在lane上的sl坐标
   if (!GetProjection(point, &accumulate_s, &lateral)) {
     return false;
   }
@@ -390,6 +422,7 @@ PointENU LaneInfo::GetNearestPoint(const Vec2d &point, double *distance) const {
   return PointFromVec2d(nearest_point);
 }
 
+//获得点在sl坐标系的坐标
 bool LaneInfo::GetProjection(const Vec2d &point, double *accumulate_s,
                              double *lateral) const {
   RETURN_VAL_IF_NULL(accumulate_s, false);
@@ -401,6 +434,7 @@ bool LaneInfo::GetProjection(const Vec2d &point, double *accumulate_s,
   double min_dist = std::numeric_limits<double>::infinity();
   int seg_num = static_cast<int>(segments_.size());
   int min_index = 0;
+  //计算线段与点的最近距离的平方，获得最近的距离和索引
   for (int i = 0; i < seg_num; ++i) {
     const double distance = segments_[i].DistanceSquareTo(point);
     if (distance < min_dist) {
@@ -408,10 +442,15 @@ bool LaneInfo::GetProjection(const Vec2d &point, double *accumulate_s,
       min_dist = distance;
     }
   }
+  //开根号
   min_dist = std::sqrt(min_dist);
   const auto &nearest_seg = segments_[min_index];
+  //线段向量与点和线段起始点组成的向量叉乘|a||b|sin，当a单位向量时，计算的就是b到a的垂直距离
   const auto prod = nearest_seg.ProductOntoUnit(point);
+  //线段向量与点和线段起始点组成的向量点乘|a||b|cos，当a单位向量时，计算的就是b投影到a的长度
   const auto proj = nearest_seg.ProjectOntoUnit(point);
+  //如果索引为0或者索引为end,判断点的投影点是否在线段外，线段外的投影点用叉乘
+  //proj<0，cos<0，说明点的投影点在线段外，需要用叉乘计算投影距离
   if (min_index == 0) {
     *accumulate_s = std::min(proj, nearest_seg.length());
     if (proj < 0) {
@@ -420,6 +459,7 @@ bool LaneInfo::GetProjection(const Vec2d &point, double *accumulate_s,
       *lateral = (prod > 0.0 ? 1 : -1) * min_dist;
     }
   } else if (min_index == seg_num - 1) {
+    //accumulated_s_是最后一段的其实s，将proj如果为正，则有可能超出endseg，所以进行使用叉乘
     *accumulate_s = accumulated_s_[min_index] + std::max(0.0, proj);
     if (proj > 0) {
       *lateral = prod;
@@ -430,6 +470,7 @@ bool LaneInfo::GetProjection(const Vec2d &point, double *accumulate_s,
     *accumulate_s = accumulated_s_[min_index] +
                     std::max(0.0, std::min(proj, nearest_seg.length()));
     *lateral = (prod > 0.0 ? 1 : -1) * min_dist;
+
   }
   return true;
 }
@@ -486,18 +527,25 @@ void LaneInfo::UpdateOverlaps(const HDMapImpl &map_instance) {
   }
 }
 
+//创建lane的kd树
 void LaneInfo::CreateKDTree() {
+  //给AABoxKDTreeParams设定值
   apollo::common::math::AABoxKDTreeParams params;
   params.max_leaf_dimension = 5.0;  // meters.
   params.max_leaf_size = 16;
-
+  //std::vector<LaneSegmentBox> segment_box_list_
+  //using LaneSegmentBox =ObjectWithAABox<LaneInfo, apollo::common::math::LineSegment2d>;
+  //std::vector<apollo::common::math::LineSegment2d> segments_;两个点的向量
   segment_box_list_.clear();
   for (size_t id = 0; id < segments_.size(); ++id) {
     const auto &segment = segments_[id];
+    //AABox2b通过两点计算2d box
     segment_box_list_.emplace_back(
         apollo::common::math::AABox2d(segment.start(), segment.end()), this,
-        &segment, id);
+        &segment, id);//将box和laneInfo和segment和ID组成ObjectWithAABox
   }
+  //using LaneSegmentKDTree = apollo::common::math::AABoxKDTree2d<LaneSegmentBox>;
+  //开始递归建立KD树
   lane_segment_kdtree_.reset(new LaneSegmentKDTree(segment_box_list_, params));
 }
 
