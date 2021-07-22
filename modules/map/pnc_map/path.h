@@ -36,6 +36,7 @@ namespace hdmap {
 // class LaneInfoConstPtr;
 // class OverlapInfoConstPtr;
 
+//道路点结构体包含道路的laneInfo和该点的sl值
 struct LaneWaypoint {
   LaneWaypoint() = default;
   LaneWaypoint(LaneInfoConstPtr lane, const double s)
@@ -70,7 +71,7 @@ LaneWaypoint LeftNeighborWaypoint(const LaneWaypoint& waypoint);
  * be null.
  */
 LaneWaypoint RightNeighborWaypoint(const LaneWaypoint& waypoint);
-
+//lane线段，包含lane和起始位置、终止位置和长度
 struct LaneSegment {
   LaneSegment() = default;
   LaneSegment(LaneInfoConstPtr lane, const double start_s, const double end_s)
@@ -87,7 +88,7 @@ struct LaneSegment {
 
   std::string DebugString() const;
 };
-
+//路径覆盖物，物体id、起始s和终止s
 struct PathOverlap {
   PathOverlap() = default;
   PathOverlap(std::string object_id, const double start_s, const double end_s)
@@ -99,7 +100,7 @@ struct PathOverlap {
 
   std::string DebugString() const;
 };
-
+//地图路径点，包含多个lane_waypoints_和航向角
 class MapPathPoint : public common::math::Vec2d {
  public:
   MapPathPoint() = default;
@@ -150,7 +151,7 @@ class MapPathPoint : public common::math::Vec2d {
 };
 
 class Path;
-
+//路径近似,path和max_error
 class PathApproximation {
  public:
   PathApproximation() = default;
@@ -163,11 +164,11 @@ class PathApproximation {
   const std::vector<common::math::LineSegment2d>& segments() const {
     return segments_;
   }
-
+  //获得投影点
   bool GetProjection(const Path& path, const common::math::Vec2d& point,
                      double* accumulate_s, double* lateral,
                      double* distance) const;
-
+  //判断是否重叠
   bool OverlapWith(const Path& path, const common::math::Box2d& box,
                    double width) const;
 
@@ -204,14 +205,14 @@ class PathApproximation {
   std::vector<double> min_original_projections_to_right_;
   std::vector<int> sampled_max_original_projections_to_left_;
 };
-
+//内插索引，id和偏移量
 class InterpolatedIndex {
  public:
   InterpolatedIndex(int id, double offset) : id(id), offset(offset) {}
   int id = 0;
   double offset = 0.0;
 };
-
+//路径，包含vector<MapPathPoint>
 class Path {
  public:
   Path() = default;
@@ -251,16 +252,18 @@ class Path {
                        double* lateral) const;
   bool GetNearestPoint(const common::math::Vec2d& point, double* accumulate_s,
                        double* lateral, double* distance) const;
+  //使用启发式参数获取投影
   bool GetProjectionWithHueristicParams(const common::math::Vec2d& point,
                                         const double hueristic_start_s,
                                         const double hueristic_end_s,
                                         double* accumulate_s, double* lateral,
                                         double* min_distance) const;
+
   bool GetProjection(const common::math::Vec2d& point, double* accumulate_s,
                      double* lateral) const;
   bool GetProjection(const common::math::Vec2d& point, double* accumulate_s,
                      double* lateral, double* distance) const;
-
+  //沿路径获取航向
   bool GetHeadingAlongPath(const common::math::Vec2d& point,
                            double* heading) const;
 
@@ -270,6 +273,7 @@ class Path {
   const std::vector<LaneSegment>& lane_segments() const {
     return lane_segments_;
   }
+  
   const std::vector<LaneSegment>& lane_segments_to_next_point() const {
     return lane_segments_to_next_point_;
   }
@@ -280,6 +284,7 @@ class Path {
   const std::vector<common::math::LineSegment2d>& segments() const {
     return segments_;
   }
+  //路径近似值
   const PathApproximation* approximation() const { return &approximation_; }
   double length() const { return length_; }
 
@@ -341,6 +346,7 @@ class Path {
 
   double GetSample(const std::vector<double>& samples, const double s) const;
 
+//通过lane获得覆盖物的函数
   using GetOverlapFromLaneFunc =
       std::function<const std::vector<OverlapInfoConstPtr>&(const LaneInfo&)>;
   void GetAllOverlaps(GetOverlapFromLaneFunc GetOverlaps_from_lane,

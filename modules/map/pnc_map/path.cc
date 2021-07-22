@@ -46,7 +46,7 @@ using std::placeholders::_1;
 namespace {
 
 const double kSampleDistance = 0.25;
-
+//通过两个地图点来查找lane线段
 bool FindLaneSegment(const MapPathPoint& p1, const MapPathPoint& p2,
                      LaneSegment* const lane_segment) {
   for (const auto& wp1 : p1.lane_waypoints()) {
@@ -68,7 +68,7 @@ std::string LaneWaypoint::DebugString() const {
   }
   return absl::StrCat("id = ", lane->id().id(), "  s = ", s);
 }
-
+//获取点的左边界类型,双黄线、单黄线、单白线、、、
 LaneBoundaryType::Type LeftBoundaryType(const LaneWaypoint& waypoint) {
   if (!waypoint.lane) {
     return LaneBoundaryType::UNKNOWN;
@@ -85,7 +85,7 @@ LaneBoundaryType::Type LeftBoundaryType(const LaneWaypoint& waypoint) {
   }
   return LaneBoundaryType::UNKNOWN;
 }
-
+//获取点的右边界类型,双黄线、单黄线、单白线、、、
 LaneBoundaryType::Type RightBoundaryType(const LaneWaypoint& waypoint) {
   if (!waypoint.lane) {
     return LaneBoundaryType::UNKNOWN;
@@ -102,15 +102,19 @@ LaneBoundaryType::Type RightBoundaryType(const LaneWaypoint& waypoint) {
   }
   return LaneBoundaryType::UNKNOWN;
 }
-
+//
 LaneWaypoint LeftNeighborWaypoint(const LaneWaypoint& waypoint) {
   LaneWaypoint neighbor;
+  //没有lane直接返回空的LaneWaypoint
   if (!waypoint.lane) {
     return neighbor;
   }
+  //通过s获得平滑后的点PointENU
   auto point = waypoint.lane->GetSmoothPoint(waypoint.s);
+  //获得basemap
   auto map_ptr = HDMapUtil::BaseMapPtr();
   CHECK_NOTNULL(map_ptr);
+  //查找相邻车道的id
   for (const auto& lane_id :
        waypoint.lane->lane().left_neighbor_forward_lane_id()) {
     auto lane = map_ptr->GetLaneById(lane_id);
@@ -119,10 +123,11 @@ LaneWaypoint LeftNeighborWaypoint(const LaneWaypoint& waypoint) {
     }
     double s = 0.0;
     double l = 0.0;
+    //获得点在相邻车道的投影点
     if (!lane->GetProjection({point.x(), point.y()}, &s, &l)) {
       continue;
     }
-
+    //如果-0.25<s<length+0.25则返回点，否则就继续
     if (s < -kSampleDistance || s > lane->total_length() + kSampleDistance) {
       continue;
     } else {

@@ -27,7 +27,7 @@ namespace hdmap {
 using apollo::relative_map::MapMsg;
 
 namespace {
-
+//base_map.bin|base_map.xml|base_map.txt选取第一个存在的文件
 // Find the first existing file from a list of candidates: "file_a|file_b|...".
 std::string FindFirstExist(const std::string& dir, const std::string& files) {
   const std::vector<std::string> candidates = absl::StrSplit(files, '|');
@@ -44,7 +44,7 @@ std::string FindFirstExist(const std::string& dir, const std::string& files) {
 }
 
 }  // namespace
-
+//返回basemap文件
 std::string BaseMapFile() {
   if (FLAGS_use_navigation_mode) {
     AWARN << "base_map file is not used when FLAGS_use_navigation_mode is true";
@@ -53,14 +53,14 @@ std::string BaseMapFile() {
              ? FindFirstExist(FLAGS_map_dir, FLAGS_base_map_filename)
              : FindFirstExist(FLAGS_map_dir, FLAGS_test_base_map_filename);
 }
-
+//获取simmap的文件
 std::string SimMapFile() {
   if (FLAGS_use_navigation_mode) {
     AWARN << "sim_map file is not used when FLAGS_use_navigation_mode is true";
   }
   return FindFirstExist(FLAGS_map_dir, FLAGS_sim_map_filename);
 }
-
+//获取routingmap的文件
 std::string RoutingMapFile() {
   if (FLAGS_use_navigation_mode) {
     AWARN << "routing_map file is not used when FLAGS_use_navigation_mode is "
@@ -68,7 +68,7 @@ std::string RoutingMapFile() {
   }
   return FindFirstExist(FLAGS_map_dir, FLAGS_routing_map_filename);
 }
-
+//通过map文件创建hdmap
 std::unique_ptr<HDMap> CreateMap(const std::string& map_file_path) {
   std::unique_ptr<HDMap> hdmap(new HDMap());
   if (hdmap->LoadMapFromFile(map_file_path) != 0) {
@@ -78,7 +78,7 @@ std::unique_ptr<HDMap> CreateMap(const std::string& map_file_path) {
   AINFO << "Load HDMap success: " << map_file_path;
   return hdmap;
 }
-
+//通过proto 中的map创建hdmap
 std::unique_ptr<HDMap> CreateMap(const MapMsg& map_msg) {
   std::unique_ptr<HDMap> hdmap(new HDMap());
   if (hdmap->LoadMapFromProto(map_msg.hdmap()) != 0) {
@@ -95,12 +95,13 @@ std::mutex HDMapUtil::base_map_mutex_;
 
 std::unique_ptr<HDMap> HDMapUtil::sim_map_ = nullptr;
 std::mutex HDMapUtil::sim_map_mutex_;
-
+//通过proto map创建basemap的指针
 const HDMap* HDMapUtil::BaseMapPtr(const MapMsg& map_msg) {
   std::lock_guard<std::mutex> lock(base_map_mutex_);
   if (base_map_ != nullptr &&
       base_map_seq_ == map_msg.header().sequence_num()) {
     // avoid re-create map in the same cycle.
+    //避免重新建图
     return base_map_.get();
   } else {
     base_map_ = CreateMap(map_msg);
@@ -108,7 +109,7 @@ const HDMap* HDMapUtil::BaseMapPtr(const MapMsg& map_msg) {
   }
   return base_map_.get();
 }
-
+//通过读取basemap文件建图
 const HDMap* HDMapUtil::BaseMapPtr() {
   // TODO(all) Those logics should be removed to planning
   /*if (FLAGS_use_navigation_mode) {
@@ -140,9 +141,9 @@ const HDMap* HDMapUtil::BaseMapPtr() {
   }
   return base_map_.get();
 }
-
+//获得basemap
 const HDMap& HDMapUtil::BaseMap() { return *CHECK_NOTNULL(BaseMapPtr()); }
-
+//获得simmap
 const HDMap* HDMapUtil::SimMapPtr() {
   if (FLAGS_use_navigation_mode) {
     return BaseMapPtr();
@@ -154,9 +155,9 @@ const HDMap* HDMapUtil::SimMapPtr() {
   }
   return sim_map_.get();
 }
-
+//获得simmap的引用
 const HDMap& HDMapUtil::SimMap() { return *CHECK_NOTNULL(SimMapPtr()); }
-
+//重载map，重新创建basemap和simmap
 bool HDMapUtil::ReloadMaps() {
   {
     std::lock_guard<std::mutex> lock(base_map_mutex_);

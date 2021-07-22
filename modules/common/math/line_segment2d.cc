@@ -79,6 +79,7 @@ double LineSegment2d::DistanceTo(const Vec2d &point) const {
   return std::abs(x0 * unit_direction_.y() - y0 * unit_direction_.x());
 }
 
+//获取point到线段最近的距离，并获取线段上到点最近的点nearest_pt
 double LineSegment2d::DistanceTo(const Vec2d &point,
                                  Vec2d *const nearest_pt) const {
   CHECK_NOTNULL(nearest_pt);

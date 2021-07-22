@@ -336,12 +336,12 @@ bool LaneInfo::IsOnLane(const Vec2d &point) const {
   if (!GetProjection(point, &accumulate_s, &lateral)) {
     return false;
   }
-
+  //以s轴判断，如果s过大或过小，则表示不在lane上
   if (accumulate_s > (total_length() + kEpsilon) ||
       (accumulate_s + kEpsilon) < 0.0) {
     return false;
   }
-
+  //以l轴判断，如果在宽度之外，则在lane外
   double left_width = 0.0;
   double right_width = 0.0;
   GetWidth(accumulate_s, &left_width, &right_width);
@@ -351,8 +351,10 @@ bool LaneInfo::IsOnLane(const Vec2d &point) const {
   return false;
 }
 
+//判断box是否在lane上，如果有一个角点不在lane上则就判断其不在lane上
 bool LaneInfo::IsOnLane(const apollo::common::math::Box2d &box) const {
   std::vector<Vec2d> corners;
+  //获得角点
   box.GetAllCorners(&corners);
   for (const auto &corner : corners) {
     if (!IsOnLane(corner)) {
@@ -362,53 +364,64 @@ bool LaneInfo::IsOnLane(const apollo::common::math::Box2d &box) const {
   return true;
 }
 
+//用s获得一个平滑点
 PointENU LaneInfo::GetSmoothPoint(double s) const {
   PointENU point;
   RETURN_VAL_IF(points_.size() < 2, point);
+  //如果s<0则将第一个点给出
   if (s <= 0.0) {
     return PointFromVec2d(points_[0]);
   }
-
+  //若s>total_length则将最后一个点给出
   if (s >= total_length()) {
     return PointFromVec2d(points_.back());
   }
-
+  //查找对应的储存的离散s
   const auto low_itr =
       std::lower_bound(accumulated_s_.begin(), accumulated_s_.end(), s);
   RETURN_VAL_IF(low_itr == accumulated_s_.end(), point);
   size_t index = low_itr - accumulated_s_.begin();
+  //获得差值
   double delta_s = *low_itr - s;
   if (delta_s < apollo::common::math::kMathEpsilon) {
     return PointFromVec2d(points_[index]);
   }
-
+  //获得s的平滑点，用前一个点的单位向量来平滑
   auto smooth_point = points_[index] - unit_directions_[index - 1] * delta_s;
 
   return PointFromVec2d(smooth_point);
 }
 
+//获得点到lan最近的距离
 double LaneInfo::DistanceTo(const Vec2d &point) const {
+  //通过KD树获得最近的线段
   const auto segment_box = lane_segment_kdtree_->GetNearestObject(point);
   RETURN_VAL_IF_NULL(segment_box, 0.0);
+  //得到point到线段的距离
   return segment_box->DistanceTo(point);
 }
 
+//
 double LaneInfo::DistanceTo(const Vec2d &point, Vec2d *map_point,
                             double *s_offset, int *s_offset_index) const {
   RETURN_VAL_IF_NULL(map_point, 0.0);
   RETURN_VAL_IF_NULL(s_offset, 0.0);
   RETURN_VAL_IF_NULL(s_offset_index, 0.0);
-
+  //通过point获得lane最近的线段，并获得lane上最近的点
   const auto segment_box = lane_segment_kdtree_->GetNearestObject(point);
   RETURN_VAL_IF_NULL(segment_box, 0.0);
   int index = segment_box->id();
+  //获取距离和最近的点
   double distance = segments_[index].DistanceTo(point, map_point);
+  //索引
   *s_offset_index = index;
+  //从lane开始的s偏移距离
   *s_offset =
       accumulated_s_[index] + segments_[index].start().DistanceTo(*map_point);
   return distance;
 }
 
+//获得最近的点，和最近的距离
 PointENU LaneInfo::GetNearestPoint(const Vec2d &point, double *distance) const {
   PointENU empty_point;
   RETURN_VAL_IF_NULL(distance, empty_point);
@@ -475,24 +488,31 @@ bool LaneInfo::GetProjection(const Vec2d &point, double *accumulate_s,
   return true;
 }
 
+//后期处理？
 void LaneInfo::PostProcess(const HDMapImpl &map_instance) {
   UpdateOverlaps(map_instance);
 }
-
+//更新覆盖物
 void LaneInfo::UpdateOverlaps(const HDMapImpl &map_instance) {
+  //遍历lane的覆盖物
   for (const auto &overlap_id : overlap_ids_) {
+    //通过MakeMapId将string类型转换成Id,再通过hdmap_impl查找overlap_ptr
+    //overlap_ptr是OverlapInfo类型
     const auto &overlap_ptr =
         map_instance.GetOverlapById(MakeMapId(overlap_id));
     if (overlap_ptr == nullptr) {
       continue;
     }
+    //找到了就存入overlaps_
     overlaps_.emplace_back(overlap_ptr);
+    //获取单个对象
     for (const auto &object : overlap_ptr->overlap().object()) {
       const auto &object_id = object.id().id();
       if (object_id == lane_.id().id()) {
         continue;
       }
       const auto &object_map_id = MakeMapId(object_id);
+      //用所有覆盖物的接口查找该id
       if (map_instance.GetLaneById(object_map_id) != nullptr) {
         cross_lanes_.emplace_back(overlap_ptr);
       }
@@ -546,17 +566,20 @@ void LaneInfo::CreateKDTree() {
   }
   //using LaneSegmentKDTree = apollo::common::math::AABoxKDTree2d<LaneSegmentBox>;
   //开始递归建立KD树
+  //用当前lane中线段组成的box来组建的
   lane_segment_kdtree_.reset(new LaneSegmentKDTree(segment_box_list_, params));
 }
 
+//用Junction初始化
 JunctionInfo::JunctionInfo(const Junction &junction) : junction_(junction) {
   Init();
 }
-
+//初始化
 void JunctionInfo::Init() {
+  //将proto的polygon转化成Polygon2d
   polygon_ = ConvertToPolygon2d(junction_.polygon());
   CHECK_GT(polygon_.num_points(), 2);
-
+  //将所有的junction覆盖物id储存起来
   for (const auto &overlap_id : junction_.overlap_id()) {
     overlap_ids_.emplace_back(overlap_id);
   }
@@ -565,7 +588,7 @@ void JunctionInfo::Init() {
 void JunctionInfo::PostProcess(const HDMapImpl &map_instance) {
   UpdateOverlaps(map_instance);
 }
-
+//更新覆盖物
 void JunctionInfo::UpdateOverlaps(const HDMapImpl &map_instance) {
   for (const auto &overlap_id : overlap_ids_) {
     const auto &overlap_ptr = map_instance.GetOverlapById(overlap_id);
@@ -578,43 +601,45 @@ void JunctionInfo::UpdateOverlaps(const HDMapImpl &map_instance) {
       if (object_id == id().id()) {
         continue;
       }
-
+      //路口只添加停止信号的id
       if (object.has_stop_sign_overlap_info()) {
         overlap_stop_sign_ids_.push_back(object.id());
       }
     }
   }
 }
-
+//信号info
 SignalInfo::SignalInfo(const Signal &signal) : signal_(signal) { Init(); }
-
+//初始化停止线
 void SignalInfo::Init() {
+  //将curve转换为segments
   for (const auto &stop_line : signal_.stop_line()) {
     SegmentsFromCurve(stop_line, &segments_);
   }
   ACHECK(!segments_.empty());
   std::vector<Vec2d> points;
+  //将segment转换为Vec2d，没有存下来使用？？
   for (const auto &segment : segments_) {
     points.emplace_back(segment.start());
     points.emplace_back(segment.end());
   }
   CHECK_GT(points.size(), 0U);
 }
-
+//人行横道
 CrosswalkInfo::CrosswalkInfo(const Crosswalk &crosswalk)
     : crosswalk_(crosswalk) {
   Init();
 }
-
+//初始化，将proto polygon转换成Polygon2d
 void CrosswalkInfo::Init() {
   polygon_ = ConvertToPolygon2d(crosswalk_.polygon());
   CHECK_GT(polygon_.num_points(), 2);
 }
-
+//停止信号
 StopSignInfo::StopSignInfo(const StopSign &stop_sign) : stop_sign_(stop_sign) {
   init();
 }
-
+//停止信号初始化,得到segments_和overlap_id
 void StopSignInfo::init() {
   for (const auto &stop_line : stop_sign_.stop_line()) {
     SegmentsFromCurve(stop_line, &segments_);
@@ -629,7 +654,7 @@ void StopSignInfo::init() {
 void StopSignInfo::PostProcess(const HDMapImpl &map_instance) {
   UpdateOverlaps(map_instance);
 }
-
+//更新覆盖物
 void StopSignInfo::UpdateOverlaps(const HDMapImpl &map_instance) {
   for (const auto &overlap_id : overlap_ids_) {
     const auto &overlap_ptr = map_instance.GetOverlapById(overlap_id);
@@ -642,7 +667,7 @@ void StopSignInfo::UpdateOverlaps(const HDMapImpl &map_instance) {
       if (object_id == id().id()) {
         continue;
       }
-
+      //添加junction和lane
       if (object.has_junction_overlap_info()) {
         overlap_junction_ids_.push_back(object.id());
       } else if (object.has_lane_overlap_info()) {
@@ -654,12 +679,13 @@ void StopSignInfo::UpdateOverlaps(const HDMapImpl &map_instance) {
     AWARN << "stop sign " << id().id() << "has no overlap with any junction.";
   }
 }
-
+//让行线，初始化
 YieldSignInfo::YieldSignInfo(const YieldSign &yield_sign)
     : yield_sign_(yield_sign) {
   Init();
 }
 
+//初始化让行线，获得segments_
 void YieldSignInfo::Init() {
   for (const auto &stop_line : yield_sign_.stop_line()) {
     SegmentsFromCurve(stop_line, &segments_);
@@ -667,7 +693,7 @@ void YieldSignInfo::Init() {
   // segments_from_curve(yield_sign_.stop_line(), &segments_);
   ACHECK(!segments_.empty());
 }
-
+//禁停区
 ClearAreaInfo::ClearAreaInfo(const ClearArea &clear_area)
     : clear_area_(clear_area) {
   Init();
@@ -677,7 +703,7 @@ void ClearAreaInfo::Init() {
   polygon_ = ConvertToPolygon2d(clear_area_.polygon());
   CHECK_GT(polygon_.num_points(), 2);
 }
-
+//减速带
 SpeedBumpInfo::SpeedBumpInfo(const SpeedBump &speed_bump)
     : speed_bump_(speed_bump) {
   Init();
@@ -689,9 +715,9 @@ void SpeedBumpInfo::Init() {
   }
   ACHECK(!segments_.empty());
 }
-
+//覆盖物
 OverlapInfo::OverlapInfo(const Overlap &overlap) : overlap_(overlap) {}
-
+//通过id获取覆盖物
 const ObjectOverlapInfo *OverlapInfo::GetObjectOverlapInfo(const Id &id) const {
   for (const auto &object : overlap_.object()) {
     if (object.id().id() == id.id()) {
@@ -700,7 +726,7 @@ const ObjectOverlapInfo *OverlapInfo::GetObjectOverlapInfo(const Id &id) const {
   }
   return nullptr;
 }
-
+//道路信息，将section和road_boundaries储存起来
 RoadInfo::RoadInfo(const Road &road) : road_(road) {
   for (const auto &section : road_.section()) {
     sections_.push_back(section);
@@ -708,25 +734,26 @@ RoadInfo::RoadInfo(const Road &road) : road_(road) {
   }
 }
 
+//获得边界线
 const std::vector<RoadBoundary> &RoadInfo::GetBoundaries() const {
   return road_boundaries_;
 }
-
+//构造停车位
 ParkingSpaceInfo::ParkingSpaceInfo(const ParkingSpace &parking_space)
     : parking_space_(parking_space) {
   Init();
 }
-
+//将proto polygon转换为Polygon2d
 void ParkingSpaceInfo::Init() {
   polygon_ = ConvertToPolygon2d(parking_space_.polygon());
   CHECK_GT(polygon_.num_points(), 2);
 }
-
+//构造PNC路口
 PNCJunctionInfo::PNCJunctionInfo(const PNCJunction &pnc_junction)
     : junction_(pnc_junction) {
   Init();
 }
-
+//初始化PNC路口
 void PNCJunctionInfo::Init() {
   polygon_ = ConvertToPolygon2d(junction_.polygon());
   CHECK_GT(polygon_.num_points(), 2);
@@ -735,7 +762,7 @@ void PNCJunctionInfo::Init() {
     overlap_ids_.emplace_back(overlap_id);
   }
 }
-
+//路侧单元信息
 RSUInfo::RSUInfo(const RSU &rsu) : _rsu(rsu) {}
 
 }  // namespace hdmap

@@ -117,7 +117,9 @@ struct RoadRoi {
   LineBoundary right_boundary;
   std::vector<PolygonBoundary> holes_boundary;
 };
-
+//LaneSegmentKDTree(AABoxKDTree2d)的参数是LaneSegmentBox(ObjectWithAABox)
+//LaneSegmentBox是有lane中由线段组成的box构成的,ObjectWithAABox中的id是线段再lane中的索引
+//实例化AABoxKDTree2dNode，将LaneSegmentBox进行KD树建立
 using LaneSegmentBox =
     ObjectWithAABox<LaneInfo, apollo::common::math::LineSegment2d>;
 using LaneSegmentKDTree = apollo::common::math::AABoxKDTree2d<LaneSegmentBox>;

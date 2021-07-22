@@ -102,6 +102,7 @@ class AABoxKDTree2dNode {
    */
   ObjectPtr GetNearestObject(const Vec2d &point) const {
     ObjectPtr nearest_object = nullptr;
+    //无穷大
     double min_distance_sqr = std::numeric_limits<double>::infinity();
     GetNearestObjectInternal(point, &min_distance_sqr, &nearest_object);
     return nearest_object;
@@ -175,7 +176,7 @@ class AABoxKDTree2dNode {
     }
     return true;
   }
-
+  //计算点到node的最小距离，在node内距离为0
   double LowerDistanceSquareToPoint(const Vec2d &point) const {
     double dx = 0.0;
     if (point.x() < min_x_) {
@@ -191,7 +192,7 @@ class AABoxKDTree2dNode {
     }
     return dx * dx + dy * dy;
   }
-
+  //在节点内部离边界距离的平方
   double UpperDistanceSquareToPoint(const Vec2d &point) const {
     const double dx =
         (point.x() > mid_x_ ? (point.x() - min_x_) : (point.x() - max_x_));
@@ -259,10 +260,13 @@ class AABoxKDTree2dNode {
   void GetNearestObjectInternal(const Vec2d &point,
                                 double *const min_distance_sqr,
                                 ObjectPtr *const nearest_object) const {
+    //判断以目标点为圆心的圆是否和节点相交
     if (LowerDistanceSquareToPoint(point) >= *min_distance_sqr - kMathEpsilon) {
       return;
     }
+    //当前节点的切分方向，切长的一边
     const double pvalue = (partition_ == PARTITION_X ? point.x() : point.y());
+    //判断该点在切分点的左边还是右边,递归查询
     const bool search_left_first = (pvalue < partition_position_);
     if (search_left_first) {
       if (left_subnode_ != nullptr) {
@@ -275,18 +279,24 @@ class AABoxKDTree2dNode {
                                                  nearest_object);
       }
     }
+    //min_distance_sqr太小就不进行下面的运算
     if (*min_distance_sqr <= kMathEpsilon) {
       return;
     }
-
+    //搜索left/right中的对象
     if (search_left_first) {
       for (int i = 0; i < num_objects_; ++i) {
+        //该节点切分方向的最小边界
         const double bound = objects_sorted_by_min_bound_[i];
+        //目标点在节点外并且差值大于最小距离（有更近的）
         if (bound > pvalue && Square(bound - pvalue) > *min_distance_sqr) {
           break;
         }
+        //获取对象
         ObjectPtr object = objects_sorted_by_min_[i];
+        //计算对象到目标点的距离
         const double distance_sqr = object->DistanceSquareTo(point);
+        //判断是否距离更短
         if (distance_sqr < *min_distance_sqr) {
           *min_distance_sqr = distance_sqr;
           *nearest_object = object;
@@ -306,9 +316,11 @@ class AABoxKDTree2dNode {
         }
       }
     }
+    //如果距离最短0，则表示找到了
     if (*min_distance_sqr <= kMathEpsilon) {
       return;
     }
+    //若没有搜索到就搜索另一边的subnode一边
     if (search_left_first) {
       if (right_subnode_ != nullptr) {
         right_subnode_->GetNearestObjectInternal(point, min_distance_sqr,
@@ -435,6 +447,7 @@ class AABoxKDTree2d {
    * @brief Get the nearest object to a target point.
    * @param point The target point. Search it's nearest object.
    * @return The nearest object to the target point.
+   * 
    */
   ObjectPtr GetNearestObject(const Vec2d &point) const {
     return root_ == nullptr ? nullptr : root_->GetNearestObject(point);
